@@ -1,0 +1,5 @@
+type ColoredLayer = {
+  layer : Layer,
+  color : GColor
+}
+signal s : ColoredLayer
