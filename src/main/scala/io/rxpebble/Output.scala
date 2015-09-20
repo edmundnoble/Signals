@@ -4,7 +4,7 @@ import io.rxpebble.Lexer.{StructField, Understood}
 
 object Output {
   def generateDeclaration(typeName: Lexer.Type, structFields: Seq[StructField]): String = {
-    s"  struct $typeName;\n  typedef struct $typeName $typeName;"
+    s"struct $typeName;\ntypedef struct $typeName $typeName;"
   }
 
   def declareStructs(understood: Understood): String = {
@@ -12,7 +12,7 @@ object Output {
   }
 
   def generateAlias(typeName: Lexer.Type, aliasTo: Lexer.Type): String = {
-    s"  typedef $typeName $aliasTo;"
+    s"typedef $typeName $aliasTo;"
   }
 
   def declareAliases(understood: Understood): String = {
@@ -20,7 +20,16 @@ object Output {
   }
 
   def generateDefinition(typeName: Lexer.Type, structFields: Seq[StructField]): String = {
-
+    s"typedef struct $typeName {\n" +
+      s"${
+        structFields.headOption.fold("")({ head =>
+          val tail = structFields.tail
+          tail.foldLeft[String](s"  ${head.typeName} ${head.fieldName};"){ (fields: String, newField: StructField) =>
+            fields + "\n" + s"  ${newField.typeName} ${newField.fieldName};"
+          }
+        })
+      }" +
+      s"\n} $typeName;"
   }
 
   def defineStructs(understood: Understood): String = {
