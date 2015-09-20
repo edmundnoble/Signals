@@ -40,7 +40,13 @@ object Output {
     Vector(declareStructs(understood), declareAliases(understood), defineStructs(understood)).mkString("\n\n")
   }
 
+  def generateMain(understood: Understood): String = ???
+
+  def generateModel(understood: Understood): String = ???
+
   def mkProgram(understood: Understood): Map[String, String] = {
-    Map("watch_model.h" -> generateHeader(understood))
+    Map("watch_model.h" -> generateHeader(understood),
+    "watch_model.c" -> generateModel(understood),
+    "watch_main.c" -> generateMain(understood))
   }
 }
