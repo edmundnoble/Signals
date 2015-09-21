@@ -26,7 +26,7 @@ class OutputTests extends WordSpec with Matchers {
       Output.generateAlias("type_from", "type_to") should be(correct)
     }
   }
-  "Signal handlers" should {
+  "Signals" should {
     "have correct static declarations" in {
       val correct =
         """static Window *window;
@@ -37,5 +37,16 @@ class OutputTests extends WordSpec with Matchers {
       )
       testResult should be(correct)
     }
+    "have correct handlers" in {
+      val correct =
+        """static void watch_model_sig_test_change_handler(uint64_t new_value) {
+        |  layer_mark_dirty(test_layer);
+        |  sig_test = new_value;
+        |}""".stripMargin
+      val program = Lexer.Understood(Map.empty, Map.empty, Seq(Lexer.Signal("sig_test", "uint64_t")), Map("test_layer" -> Lexer.DrawProc("", "")))
+      val testResult = Output.generateSignalHandlers(program)
+      testResult should be(correct)
+    }
   }
+
 }

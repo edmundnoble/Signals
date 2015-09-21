@@ -28,7 +28,6 @@ object Parsers {
   val typeStructDeclaration: Parser[TypeStructDeclaration] = "{" ~ wsp.? ~ typeStructFields.map(TypeStructDeclaration) ~ wsp.? ~ "}"
   val structOrAlias: Parser[Either[TypeStructDeclaration, TypeAliasDeclaration]] = P(typeStructDeclaration.map(Left.apply) | typeAliasDeclaration.map(Right.apply))
   val typeDeclaration: Parser[TypeDeclaration] = P("type" ~ wsp ~ typeName.! ~ wsp.? ~ "=" ~ wsp.? ~ structOrAlias).map(TypeDeclaration.tupled)
-  val cLiteral = P(CharPred(_ => true))
   val drawProcDefinition: Parser[(String, String)] = P("(" ~ wsp.? ~ ident.! ~ ")" ~ wsp.? ~ "{" ~ CharPred(CharPredicates.isPrintableChar).! ~ "} end")
   val layerDeclaration: Parser[Statement] = P("layer" ~ wsp ~ layerName ~ wsp.? ~ "=" ~ wsp.? ~ drawProcDefinition)
     .map(t => LayerDeclaration.tupled((t._1, t._2._1, t._2._2)))
