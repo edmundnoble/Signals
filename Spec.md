@@ -30,9 +30,15 @@ type LayerWithColor = {
 }
 ```
 
-#### Draw Procs
-RxPebble can be used to define draw procs for Pebble Layers.
-Syntax is yet to be determined.
+#### Layers
+RxPebble can be used to define custom Pebble Layers and their `update_proc` callbacks. The code inside the update_proc callback is a super-set of C as according to the C11 standard. Signals can be referred to from the `update_proc` definition using the `${...}` notation as shown below. 
+
+```
+signal circle_radius : uint64_t
+layer clock_layer = (ctx) => {
+	graphics_draw_circle(ctx, ${circle_radius});
+} end
+```
 
 #### Constants
 Truly compile-time constant values, values that must be initialized and cleaned up during `window_load()` and `window_unload()`, and values that must be initialized during `init()` and cleaned up during `deinit()` are all considered constants in RxPebble.
@@ -43,15 +49,21 @@ All identifiers are case-sensitive.
 
  _program ::= (statement wsp? newline wsp?)+_
    
- _statement ::= (signal-declaration | type-declaration | draw-proc-declaration | constant-declaration)_
+ _statement ::= (signal-declaration | type-declaration | layer-declaration | constant-declaration)_
  
  _type-declaration ::= "type" wsp type-name wsp "=" wsp (type-alias-declaration | type-struct-declaration)_
  
  _type-alias-declaration ::= type-name_
  
- _type-struct-declaration ::= (type-struct-field newline)*_
+ _type-struct-declaration ::= "{" wsp? (type-struct-field newline)* wsp? "}"I_
  
  _type-struct-field ::= type-name field-name_
+ 
+ _layer-declaration ::= "layer" wsp layer-name wsp? "=" wsp? draw-proc-definition_
+ 
+ _draw-proc-definition ::= "(" id ")" wsp? "=>" wsp? c-literal_
+ 
+ _c-literal ::= "{" wsp? c-code wsp? "} end"_
  
  _type-name ::= id_
  

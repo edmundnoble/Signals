@@ -16,7 +16,7 @@ class OutputTests extends WordSpec with Matchers {
       val correct =
         """struct type;
           |typedef struct type type;""".stripMargin
-      Output.generateDeclaration("type", Seq(Lexer.StructField("layer", "Layer"))) should be(correct)
+      Output.generateForwardTypeDeclaration("type", Seq(Lexer.StructField("layer", "Layer"))) should be(correct)
     }
   }
   "An alias" should {
@@ -24,6 +24,18 @@ class OutputTests extends WordSpec with Matchers {
       val correct =
         """typedef type_from type_to;""".stripMargin
       Output.generateAlias("type_from", "type_to") should be(correct)
+    }
+  }
+  "Signal handlers" should {
+    "have correct static declarations" in {
+      val correct =
+        """static Window *window;
+          |
+          |static uint64_t sig_test;""".stripMargin
+      val testResult = Output.generateStaticDeclarations(
+        Lexer.Understood(Map.empty, Map.empty, Seq(Lexer.Signal("sig_test", "uint64_t")), Map.empty)
+      )
+      testResult should be(correct)
     }
   }
 }
