@@ -79,7 +79,7 @@ All identifiers are case-sensitive.
  } then ease_in_out for 1000ms {
  	sig_rect from GRect(GPoint(180, 180), GSize(0, 0))
  				to GRect(GPoint(0, 0), GSize(180, 180)
- }
+ } end
  
  layer clock_layer = (ctx) => {
    graphics_fill_rect(ctx, sig_rect);
