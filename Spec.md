@@ -43,19 +43,22 @@ layer clock_layer = (ctx) => {
 #### Constants
 Truly compile-time constant values, values that must be initialized and cleaned up during `window_load()` and `window_unload()`, and values that must be initialized during `init()` and cleaned up during `deinit()` are all considered constants in RxPebble.
 
+#### Animations
+Signals can be animated using the syntax `animate [signal] from [start_value] to [end_value]`.
+
 ## Syntax
 
 All identifiers are case-sensitive.
 
  _program ::= (statement wsp? newline wsp?)+_
    
- _statement ::= (signal-declaration | type-declaration | layer-declaration | constant-declaration)_
+ _statement ::= (signal-declaration | type-declaration | layer-declaration | constant-declaration | animation-declaration)_
  
  _type-declaration ::= "type" wsp type-name wsp "=" wsp (type-alias-declaration | type-struct-declaration)_
  
  _type-alias-declaration ::= type-name_
  
- _type-struct-declaration ::= "{" wsp? (type-struct-field newline)* wsp? "}"I_
+ _type-struct-declaration ::= "{" wsp? (type-struct-field newline)* wsp? "}"_
  
  _type-struct-field ::= type-name field-name_
  
@@ -63,11 +66,33 @@ All identifiers are case-sensitive.
  
  _draw-proc-definition ::= "(" id ")" wsp? "=>" wsp? c-literal_
  
+ _animation-curve ::= "linear" | "ease\_out" | "ease\_in" | "ease\_in\_out"_
+ 
+ _animation-declaration ::= "animate" animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline wsp? (signal-name "from" wsp start-value "to" wsp end-value)*(min = 1, sep = wsp? "\n" wsp?) newline "} end"_
+ 
+ ```
+ signal sig_rect : GRect
+ 
+ animate ease_in_out for 1000ms after 100ms {
+   sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
+   				to GRect(GPoint(180, 180), GSize(0, 0)
+ } then ease_in_out for 1000ms {
+ 	sig_rect from GRect(GPoint(180, 180), GSize(0, 0))
+ 				to GRect(GPoint(0, 0), GSize(180, 180)
+ }
+ 
+ layer clock_layer = (ctx) => {
+   graphics_fill_rect(ctx, sig_rect);
+ }
+ ```
+ 
  _c-literal ::= "{" wsp? c-code wsp? "} end"_
  
  _type-name ::= id_
  
  _field-name ::= id_
+ 
+ _signal-name ::= id_
  
  _id ::= regex[a-zA-Z0-9]+_
  
