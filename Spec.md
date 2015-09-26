@@ -54,6 +54,8 @@ All identifiers are case-sensitive.
    
  _statement ::= (signal-declaration | type-declaration | layer-declaration | constant-declaration | animation-declaration)_
  
+ _signal-declaration ::= "signal" wsp type-name wsp signal-name wsp? ";"_
+ 
  _type-declaration ::= "type" wsp type-name wsp "=" wsp (type-alias-declaration | type-struct-declaration)_
  
  _type-alias-declaration ::= type-name_
@@ -68,18 +70,44 @@ All identifiers are case-sensitive.
  
  _animation-curve ::= "linear" | "ease\_out" | "ease\_in" | "ease\_in\_out"_
  
- _animation-declaration ::= "animate" animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline wsp? (signal-name "from" wsp start-value "to" wsp end-value)*(min = 1, sep = wsp? "\n" wsp?) newline "} end"_
+ _animation-definition ::= animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline_
+ 
+ _animation-declaration ::= "then"? animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline wsp? (signal-name "from" wsp start-value "to" wsp end-value)*(min = 1, sep = wsp? "," newline) newline "} end"_
  
  ```
- signal sig_rect : GRect
+ signal GRect sig_rect;
+ signal GColor8 sig_color;
+ 
+stage {
+  intro {
+    ease_in_out for 1000ms after 100ms {
+      sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
+               to GRect(GPoint(180, 180), GSize(0, 0))
+    } then linear for 1000ms after 100ms {
+      sig_rect from GRect(GPoint(180, 180), GSize(0, 0))
+               to GRect(GPoint(0, 0), GSize(180, 180))
+    }
+    linear for 2000ms {
+      sig_color = GColorBlue;
+    } then linear for 1000ms {
+      sig_color = GColorGreen;
+    }
+  }
+  forever (tick_time) => {
+  	sig_color = GColorBlue;
+  	sig_rect.origin = GPoint(tick_time->tm_hour, tick_time
+  }
+}
  
  animate ease_in_out for 1000ms after 100ms {
    sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
-   				to GRect(GPoint(180, 180), GSize(0, 0)
- } then ease_in_out for 1000ms {
+   				to GRect(GPoint(180, 180), GSize(0, 0);
+ } then animate ease_in_out for 1000ms {
  	sig_rect from GRect(GPoint(180, 180), GSize(0, 0))
- 				to GRect(GPoint(0, 0), GSize(180, 180)
- } end
+ 				to GRect(GPoint(0, 0), GSize(180, 180);
+ } then use time (tick_time) => {
+ 	sig_rect = tick_time->tm_sec;
+ }
  
  layer clock_layer = (ctx) => {
    graphics_fill_rect(ctx, sig_rect);
@@ -94,6 +122,8 @@ All identifiers are case-sensitive.
  
  _signal-name ::= id_
  
- _id ::= regex[a-zA-Z0-9]+_
+ _id ::= regex { [a-zA-Z0-9]+ }_
  
- _newline ::= "\n"_
+ _duration ::= regex { -?[0-9]+ } wsp? "ms"_
+ 
+ _newline ::= wsp? "\n" wsp?_
