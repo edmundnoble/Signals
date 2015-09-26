@@ -34,10 +34,11 @@ type LayerWithColor = {
 RxPebble can be used to define custom Pebble Layers and their `update_proc` callbacks. The code inside the update_proc callback is a super-set of C as according to the C11 standard. Signals can be referred to from the `update_proc` definition using the `${...}` notation as shown below. 
 
 ```
-signal circle_radius : uint64_t
+signal uint64_t circle_radius;
+
 layer clock_layer = (ctx) => {
 	graphics_draw_circle(ctx, ${circle_radius});
-} end
+}
 ```
 
 #### Constants
@@ -72,7 +73,7 @@ All identifiers are case-sensitive.
  
  _animation-definition ::= animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline_
  
- _animation-declaration ::= "then"? animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline wsp? (signal-name "from" wsp start-value "to" wsp end-value)*(min = 1, sep = wsp? "," newline) newline "} end"_
+ _animation-declaration ::= "then"? animation-curve wsp "from" wsp duration wsp ("after" duration wsp)? "{" newline wsp? (signal-name "from" wsp start-value "to" wsp end-value)*(min = 1, sep = wsp? "," newline) newline "}"_
  
  ```
  signal GRect sig_rect;
@@ -99,22 +100,12 @@ stage {
   }
 }
  
- animate ease_in_out for 1000ms after 100ms {
-   sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
-   				to GRect(GPoint(180, 180), GSize(0, 0);
- } then animate ease_in_out for 1000ms {
- 	sig_rect from GRect(GPoint(180, 180), GSize(0, 0))
- 				to GRect(GPoint(0, 0), GSize(180, 180);
- } then use time (tick_time) => {
- 	sig_rect = tick_time->tm_sec;
- }
- 
  layer clock_layer = (ctx) => {
    graphics_fill_rect(ctx, sig_rect);
  }
  ```
  
- _c-literal ::= "{" wsp? c-code wsp? "} end"_
+ _c-literal ::= "{" wsp? c-code wsp? "}"_
  
  _type-name ::= id_
  

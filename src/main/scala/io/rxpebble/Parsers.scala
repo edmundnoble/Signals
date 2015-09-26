@@ -13,12 +13,14 @@ object Parsers {
   case class LayerDeclaration(layerName: String, gContextName: String, drawProcCode: String) extends Statement
   case class AnimationComponent(signalName: String, fromValue: String, toValue: String)
   case class AnimationDefinition(chained: Boolean, curve: Lexer.AnimationCurve, duration: Int, delay: Int, components: Seq[AnimationComponent])
-  case class CompoundAnimationDefinition(animations: Seq[AnimationDefinition])
+  case class IntroDefinition(animations: Seq[AnimationDefinition])
   case class ForeverDefinition(timeName: String, code: String)
   case class StageDefinition(definitions: Seq[AnimationDefinition], forever: ForeverDefinition) extends Statement
   case class TypeStructDeclaration(fields: Seq[TypeStructField])
   case class TypeStructField(fieldName: String, typeName: String)
   case class TypeAliasDeclaration(aliasTo: String)
+
+  def unordered[A, B](pa: Parser[A], pb: Parser[B], sep: Parser[_]): Parser[(A, B)] = (pa ~ !sep ~ pb) | (pb ~ !sep ~ pa).map(_.swap)
 
   val whiteSpace = P(CharPred(Character.isWhitespace).rep)
   val wsp = whiteSpace
@@ -29,6 +31,7 @@ object Parsers {
   val fieldName = P(ident)
   val layerName = P(ident)
   val animationName = P(ident)
+  val tickTimeName = P(ident)
   val animationCurve: Parser[Lexer.AnimationCurve] = P(
     P("linear").map(_ => LinearCurve) | P("ease_out").map(_ => EaseOutCurve) | P("ease_in").map(_ => EaseInCurve) | P("ease_in_out").map(_ => EaseInOutCurve)
   )
@@ -43,7 +46,7 @@ object Parsers {
   val typeStructDeclaration: Parser[TypeStructDeclaration] = "{" ~ wsp.? ~ typeStructFields.map(TypeStructDeclaration) ~ wsp.? ~ "}"
   val structOrAlias: Parser[Either[TypeStructDeclaration, TypeAliasDeclaration]] = P(typeStructDeclaration.map(Left.apply) | typeAliasDeclaration.map(Right.apply))
   val typeDeclaration: Parser[TypeDeclaration] = P("type" ~ wsp ~ typeName.! ~ wsp.? ~ "=" ~ wsp.? ~ structOrAlias).map(TypeDeclaration.tupled)
-  val drawProcDefinition: Parser[(String, String)] = P("(" ~ wsp.? ~ ident.! ~ ")" ~ wsp.? ~ "{" ~ CharPred(CharPredicates.isPrintableChar).! ~ "} end")
+  val drawProcDefinition: Parser[(String, String)] = P("(" ~ wsp.? ~ ident.! ~ ")" ~ wsp.? ~ "{" ~ CharPred(CharPredicates.isPrintableChar).! ~ "}")
   val layerDeclaration: Parser[Statement] = P("layer" ~ wsp ~ layerName.! ~ wsp.? ~ "=" ~ wsp.? ~ drawProcDefinition)
     .map(t => LayerDeclaration.tupled((t._1, t._2._1, t._2._2)))
   val constantDeclaration: Parser[Statement] = P(Fail)
@@ -53,9 +56,10 @@ object Parsers {
     (("then" ~ wsp).?.map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ animationCurve ~ wsp ~ "for" ~ wsp ~ timePeriod ~ wsp ~ optionalDelay ~ "{\n" ~ animationComponent.rep(min = 1, sep = "\n") ~ "\n}").map {
     case (chained, curve, duration, maybeDelay, components) => AnimationDefinition(chained, curve, duration, maybeDelay.getOrElse(0), components)
   }
-
+  val introDefinition = P("intro" ~ wsp.? ~ "{" ~ wsp.? ~ animationDefinition.rep(min = 1, wsp.?) ~ wsp.? ~ "}")
+  val foreverDefinition = P("forever" ~ wsp.? ~ "(" ~ wsp.? ~ tickTimeName.! ~ wsp.? ~ ")" ~ wsp.? ~ "=>" ~ wsp.? ~ "{" ~ wsp.? ~ CharPred(CharPredicates.isPrintableChar).! ~ "}").map(ForeverDefinition.tupled)
+  val stageDefinition: P[StageDefinition] = P(unordered(introDefinition, foreverDefinition, wsp.?)).map(StageDefinition.tupled)
   val stageDeclaration: P[Statement] = P("stage" ~ wsp.? ~ "{" ~ stageDefinition ~ wsp.? ~ "}")
-  val stageDefinition: P[StageDefinition] =
   val statement: Parser[Statement] = P(signalDeclaration | typeDeclaration | layerDeclaration | constantDeclaration | stageDeclaration)
   val program: Parser[Seq[Statement]] = P(statement.rep(min = 1, sep = ("\n" | wsp.? ~ "\n") ~ wsp.?) ~ wsp.? ~ End)
 }
