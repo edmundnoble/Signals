@@ -12,7 +12,10 @@ _Signals_ in RxPebble are push-based streams of data which can be consumed by th
 signal hour_angle : uint64_t
 ```
 
-Some signals, like the current time, are built in to RxPebble.
+The behavior that generates signals is contained in the _Stage_.
+
+#### Stage
+The _stage_ is an area of an RxPebble program which describes all of the behavior of the program's signals. 
 
 #### Types
 All of the primitive types of RxPebble are the types exposed by the Pebble C SDK. Type aliases can be employed to give an extant type a new name, using the __type__ keyword.
@@ -43,9 +46,6 @@ layer clock_layer = (ctx) => {
 
 #### Constants
 Truly compile-time constant values, values that must be initialized and cleaned up during `window_load()` and `window_unload()`, and values that must be initialized during `init()` and cleaned up during `deinit()` are all considered constants in RxPebble.
-
-#### Animations
-Signals can be animated using the syntax `animate [signal] from [start_value] to [end_value]`.
 
 ## Syntax
 

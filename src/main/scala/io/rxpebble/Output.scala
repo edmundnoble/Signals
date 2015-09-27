@@ -1,6 +1,7 @@
 package io.rxpebble
 
 import io.rxpebble.Lexer._
+import io.rxpebble.Parsers.InterpolatedAnimationComponent
 
 object Output {
   implicit class WithMkStringMap[A](val ts: TraversableOnce[A]) extends AnyVal {
@@ -181,7 +182,7 @@ object Output {
       case (Animation(durationMs, delayMs, curve, components), index) =>
         s"""static void update_animation_$index(Animation *animation, const AnimationProgress animation_progress) {
           |${components.mkStringMap("\n") {
-            case AnimationComponent(signalName, startValue, endValue) =>
+            case InterpolatedAnimationComponent(signalName, startValue, endValue) =>
               val signal = understood.signals.find(_.signalName == signalName)
               signal.fold {
                 throw new RuntimeException("Signal name not found!")
@@ -193,7 +194,7 @@ object Output {
             |}""".stripMargin
     }
     val makeAnimations = understood.animations.zipWithIndex.mkStringMap("\n\n") {
-      case (Animation(durationMs, delayMs, curve, Seq(AnimationComponent(signalName, startValue, endValue))), index) =>
+      case (Animation(durationMs, delayMs, curve, Seq(InterpolatedAnimationComponent(signalName, startValue, endValue))), index) =>
         s"static void make_animation_$index(void) {\n" +
           s"  Animation *animation_$index = animation_create();\n" +
           s"  static const AnimationImplementation animation_implementation = {\n" +
@@ -208,6 +209,7 @@ object Output {
     updateAnimations + "\n\n" + makeAnimations
   }
 
+  // TODO
   def generateStartIntroAnimation(understood: Understood): String = {
     s"""void watch_model_start_intro_animation(void) {
        | Animation *animation;
@@ -220,6 +222,7 @@ object Output {
      """.stripMargin
   }
 
+  // TODO
   def generateModelInit(understood: Understood): String = ???
 
   def generateModel(understood: Understood): String = {

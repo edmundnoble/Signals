@@ -1,6 +1,6 @@
 package io.rxpebble
 
-import io.rxpebble.Parsers.{ForeverDefinition, AnimationDefinition}
+import io.rxpebble.Parsers.{AnimationComponent, ForeverDefinition, AnimationDefinition}
 import shapeless._
 import scalaz.{Lens ⇒ _, _}
 import Scalaz._
@@ -19,7 +19,6 @@ object Lexer {
   case class DrawProc(code: String, contextName: String)
   case class StructField(fieldName: String, typeName: Type)
   case class Signal(signalName: String, typeName: Type)
-  case class AnimationComponent(signalName: String, startValue: String, endValue: String)
   case class Animation(durationMs: Int = 0,
                        delayMs: Int = 0,
                        curve: AnimationCurve = EaseInOutCurve,
@@ -63,7 +62,7 @@ object Lexer {
                   newAnim.delay.right[LexerError]
                 }
               delayWithErr.map { delay ⇒
-                Animation(newAnim.duration, delay, newAnim.curve, newAnim.components.map(comp ⇒ AnimationComponent.tupled(Parsers.AnimationComponent.unapply(comp).get)))
+                Animation(newAnim.duration, delay, newAnim.curve, newAnim.components)
               }
             }
             val animationsWithErr = animationDefinitions.foldLeft[LexerError \/ Seq[Animation]](Seq[Animation]().right[LexerError]) { (soFar, newAnimDef) ⇒

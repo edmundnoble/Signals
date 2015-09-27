@@ -14,7 +14,9 @@ object Parsers {
   case class SignalDeclaration(signalIdentifier: String, typeIdentifier: String) extends Statement
   case class TypeDeclaration(typeIdentifier: String, typeDefinition: Either[TypeStructDeclaration, TypeAliasDeclaration]) extends Statement
   case class LayerDeclaration(layerName: String, gContextName: String, drawProcCode: String) extends Statement
-  case class AnimationComponent(signalName: String, fromValue: String, toValue: String)
+  sealed trait AnimationComponent
+  case class ConstantAnimationComponent(signalName: String, value: String) extends AnimationComponent
+  case class InterpolatedAnimationComponent(signalName: String, fromValue: String, toValue: String) extends AnimationComponent
   case class AnimationDefinition(chained: Boolean, curve: Lexer.AnimationCurve, duration: Int, delay: Int, components: Seq[AnimationComponent])
   case class IntroDefinition(animations: Seq[AnimationDefinition])
   case class ForeverDefinition(timeName: String, code: String)
@@ -59,16 +61,18 @@ object Parsers {
     .map(t => LayerDeclaration.tupled((t._1, t._2._1, t._2._2)))
   val constantDeclaration: Parser[Statement] = P(Fail)
   val optionalDelay: Parser[Option[Int]] = P("after" ~ wsp ~ timePeriod ~ wsp).map(Some(_)) | P(Pass).map(_ => None)
-  val animationComponent: Parser[AnimationComponent] = P(signalName.! ~ wsp ~ "from" ~ wsp ~ signalValue.! ~ wsp ~ "to" ~ wsp ~ signalValue.!).map(AnimationComponent.tupled)
+  val animationInterpolated: Parser[AnimationComponent] = P(signalName.!.log() ~ wsp.log() ~ "from".log() ~ wsp.log() ~ signalValue.!.log() ~ wsp.log() ~ "to".log() ~ wsp.log() ~ signalValue.!.log()).map(InterpolatedAnimationComponent.tupled).log()
+  val animationConstant: Parser[AnimationComponent] = P(signalName.!.log() ~ wsp.?.log() ~ "=".log() ~ wsp.?.log() ~ signalValue.!.log()).map(ConstantAnimationComponent.tupled).log()
+  val animationComponent: Parser[AnimationComponent] = animationInterpolated | animationConstant
   val animationDefinition: Parser[AnimationDefinition] = P(
     (("then" ~ wsp).map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ animationCurve ~ wsp ~ "for" ~ wsp ~ timePeriod ~ wsp ~ optionalDelay ~
       wsp.? ~ "{" ~ wsp.? ~ animationComponent.rep(min = 0, sep = wsp.?) ~ wsp.? ~ "}").map {
     case (chained, curve, duration, maybeDelay, components) => AnimationDefinition(chained, curve, duration, maybeDelay.getOrElse(0), components)
-  }
-  val introDefinition = P("intro" ~ wsp.? ~ "{" ~ wsp.? ~ animationDefinition.rep(min = 1, sep = wsp.?) ~ wsp.? ~ "}")
+  }.log()
+  val introDefinition = P("intro".log() ~ wsp.?.log() ~ "{".log() ~ wsp.?.log() ~ animationDefinition.rep(min = 1, sep = wsp.?).log() ~ wsp.?.log() ~ "}").log()
   val foreverDefinition = P("forever" ~ wsp.? ~ "(" ~ wsp.? ~ tickTimeName.! ~ wsp.? ~ ")" ~ wsp.? ~ "=>" ~ wsp.? ~ "{" ~ CharsWhile(_ != '}').! ~ "}").map(ForeverDefinition.tupled)
-  val stageDefinition: P[StageDefinition] = P(unordered(introDefinition, foreverDefinition, wsp.?)).map(StageDefinition.tupled)
-  val stageDeclaration: P[Statement] = P("stage" ~ wsp.? ~ "{" ~ wsp.? ~ stageDefinition ~ wsp.? ~ "}")
+  val stageDefinition: P[StageDefinition] = P(unordered(introDefinition.log(), foreverDefinition.log(), wsp.?)).map(StageDefinition.tupled).log()
+  val stageDeclaration: P[Statement] = P("stage" ~ wsp.? ~ "{" ~ wsp.? ~ stageDefinition ~ wsp.? ~ "}").log()
   val statement: Parser[Statement] = P(signalDeclaration | typeDeclaration | layerDeclaration | constantDeclaration | stageDeclaration)
-  val program: Parser[Seq[Statement]] = P(Start ~ wsp.? ~ statement.rep(min = 1, sep = wsp.?) ~ wsp.? ~ End)
+  val program: Parser[Seq[Statement]] = P(Start ~ wsp.? ~ statement.rep(min = 1, sep = wsp.?) ~ wsp.? ~ End).log()
 }
