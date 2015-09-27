@@ -1,11 +1,14 @@
 package io.rxpebble
 
-import fastparse.all._
-import fastparse.core.Result.Failure
+import fastparse.Logger
 import io.rxpebble.Lexer.{EaseOutCurve, EaseInOutCurve, EaseInCurve, LinearCurve}
 import shapeless.ops.hlist.Tupler
 
+import scala.language.postfixOps
+
 object Parsers {
+
+  import fastparse.all._
 
   sealed trait Statement
   case class SignalDeclaration(signalIdentifier: String, typeIdentifier: String) extends Statement
@@ -20,12 +23,15 @@ object Parsers {
   case class TypeStructField(fieldName: String, typeName: String)
   case class TypeAliasDeclaration(aliasTo: String)
 
-  def unordered[A, B](pa: Parser[A], pb: Parser[B], sep: Parser[_]): Parser[(A, B)] = (pa ~ !sep ~ pb) | (pb ~ !sep ~ pa).map(_.swap)
+  def unordered[A, B](pa: Parser[A], pb: Parser[B], sep: Parser[_]): Parser[(A, B)] = {
+    val sepNoCapture = sep.map(_ ⇒ ())
+    (pa ~ sepNoCapture ~ pb) | (pb ~ sepNoCapture ~ pa).map(_.swap)
+  }
 
   val whiteSpace = P(CharPred(Character.isWhitespace).rep)
   val wsp = whiteSpace
-  val newline = wsp.? ~ "\n" ~ wsp.?
-  val ident = P(CharPred(Character.isAlphabetic(_)) ~ CharPred(ch => Character.isAlphabetic(ch) || Character.isDigit(ch) || "_-".contains(ch)).rep)
+  val newline = "\n"
+  val ident = P(CharIn('0' to '9', 'a' to 'z', 'A' to 'Z', "-_").rep(min = 1))
   val typeName = P(ident)
   val signalName = P(ident)
   val fieldName = P(ident)
@@ -35,31 +41,34 @@ object Parsers {
   val animationCurve: Parser[Lexer.AnimationCurve] = P(
     P("linear").map(_ => LinearCurve) | P("ease_out").map(_ => EaseOutCurve) | P("ease_in").map(_ => EaseInCurve) | P("ease_in_out").map(_ => EaseInOutCurve)
   )
-  val timePeriod: Parser[Int] = P(CharIn("-").?.! ~ CharPred(Character.isDigit).! ~ "ms").map {
+  val timePeriod: Parser[Int] = P(CharIn("-").?.! ~ CharsWhile(Character.isDigit).! ~ "ms").map {
     case (neg, number) => (neg + number).toInt
   }
-  val signalValue = P(CharIn('0' to '9', 'a' to 'z', 'A' to 'Z') | CharPred(Character.isWhitespace))
-  val signalDeclaration: Parser[SignalDeclaration] = P("signal" ~ wsp ~ signalName.! ~ wsp.? ~ ":" ~ wsp.? ~ typeName.!).map(SignalDeclaration.tupled)
+  val signalValue = P(CharsWhile(ch ⇒ !"\n}".contains(ch)))
+  val signalDeclaration: Parser[SignalDeclaration] = P("signal" ~ wsp ~ typeName.! ~ wsp ~ signalName.! ~ wsp.? ~ ";" ~ newline).map {
+    case (typeIdentifier, signalIdentifier) ⇒ SignalDeclaration(signalIdentifier = signalIdentifier, typeIdentifier = typeIdentifier)
+  }
   val typeAliasDeclaration: Parser[TypeAliasDeclaration] = P(typeName.!).map(TypeAliasDeclaration)
-  val typeStructFieldDeclaration: Parser[TypeStructField] = P(fieldName.! ~ wsp.? ~ ":" ~ wsp.? ~ typeName.!).map(TypeStructField.tupled)
-  val typeStructFields: Parser[Seq[TypeStructField]] = P(typeStructFieldDeclaration.rep(sep = wsp.? ~ ",\n" ~ wsp.?, min = 1))
-  val typeStructDeclaration: Parser[TypeStructDeclaration] = "{" ~ wsp.? ~ typeStructFields.map(TypeStructDeclaration) ~ wsp.? ~ "}"
+  val typeStructFieldDeclaration: Parser[TypeStructField] = P(fieldName.! ~ ":" ~ typeName.!).map(TypeStructField.tupled)
+  val typeStructFields: Parser[Seq[TypeStructField]] = P(typeStructFieldDeclaration.rep(sep = ",\n", min = 1))
+  val typeStructDeclaration: Parser[TypeStructDeclaration] = "{" ~ typeStructFields.map(TypeStructDeclaration) ~ "}"
   val structOrAlias: Parser[Either[TypeStructDeclaration, TypeAliasDeclaration]] = P(typeStructDeclaration.map(Left.apply) | typeAliasDeclaration.map(Right.apply))
-  val typeDeclaration: Parser[TypeDeclaration] = P("type" ~ wsp ~ typeName.! ~ wsp.? ~ "=" ~ wsp.? ~ structOrAlias).map(TypeDeclaration.tupled)
-  val drawProcDefinition: Parser[(String, String)] = P("(" ~ wsp.? ~ ident.! ~ ")" ~ wsp.? ~ "{" ~ CharPred(CharPredicates.isPrintableChar).! ~ "}")
+  val typeDeclaration: Parser[TypeDeclaration] = P("type" ~ wsp ~ typeName.! ~ "=" ~ structOrAlias).map(TypeDeclaration.tupled)
+  val drawProcDefinition: Parser[(String, String)] = P("(" ~ ident.! ~ ")" ~ wsp.? ~ "=>" ~ wsp.? ~ "{" ~ CharsWhile(ch ⇒ ch != '}').! ~ "}")
   val layerDeclaration: Parser[Statement] = P("layer" ~ wsp ~ layerName.! ~ wsp.? ~ "=" ~ wsp.? ~ drawProcDefinition)
     .map(t => LayerDeclaration.tupled((t._1, t._2._1, t._2._2)))
   val constantDeclaration: Parser[Statement] = P(Fail)
   val optionalDelay: Parser[Option[Int]] = P("after" ~ wsp ~ timePeriod ~ wsp).map(Some(_)) | P(Pass).map(_ => None)
   val animationComponent: Parser[AnimationComponent] = P(signalName.! ~ wsp ~ "from" ~ wsp ~ signalValue.! ~ wsp ~ "to" ~ wsp ~ signalValue.!).map(AnimationComponent.tupled)
   val animationDefinition: Parser[AnimationDefinition] = P(
-    (("then" ~ wsp).?.map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ animationCurve ~ wsp ~ "for" ~ wsp ~ timePeriod ~ wsp ~ optionalDelay ~ "{\n" ~ animationComponent.rep(min = 1, sep = "\n") ~ "\n}").map {
+    (("then" ~ wsp).map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ animationCurve ~ wsp ~ "for" ~ wsp ~ timePeriod ~ //wsp ~ optionalDelay ~
+    Pass.map(_ ⇒ None) ~ wsp.? ~ "{" ~ wsp.? ~ animationComponent.rep(min = 0, sep = wsp.?) ~ wsp.? ~ "}").map {
     case (chained, curve, duration, maybeDelay, components) => AnimationDefinition(chained, curve, duration, maybeDelay.getOrElse(0), components)
   }
-  val introDefinition = P("intro" ~ wsp.? ~ "{" ~ wsp.? ~ animationDefinition.rep(min = 1, wsp.?) ~ wsp.? ~ "}")
-  val foreverDefinition = P("forever" ~ wsp.? ~ "(" ~ wsp.? ~ tickTimeName.! ~ wsp.? ~ ")" ~ wsp.? ~ "=>" ~ wsp.? ~ "{" ~ wsp.? ~ CharPred(CharPredicates.isPrintableChar).! ~ "}").map(ForeverDefinition.tupled)
+  val introDefinition = P("intro" ~ wsp.? ~ "{" ~ wsp.? ~ animationDefinition.rep(min = 1, sep = wsp.?) ~ wsp.? ~ "}")
+  val foreverDefinition = P("forever" ~ wsp.? ~ "(" ~ wsp.? ~ tickTimeName.! ~ wsp.? ~ ")" ~ wsp.? ~ "=>" ~ wsp.? ~ "{" ~ CharsWhile(_ != '}').! ~ "}").map(ForeverDefinition.tupled)
   val stageDefinition: P[StageDefinition] = P(unordered(introDefinition, foreverDefinition, wsp.?)).map(StageDefinition.tupled)
-  val stageDeclaration: P[Statement] = P("stage" ~ wsp.? ~ "{" ~ stageDefinition ~ wsp.? ~ "}")
+  val stageDeclaration: P[Statement] = P("stage" ~ wsp.? ~ "{" ~ wsp.? ~ stageDefinition ~ wsp.? ~ "}")
   val statement: Parser[Statement] = P(signalDeclaration | typeDeclaration | layerDeclaration | constantDeclaration | stageDeclaration)
-  val program: Parser[Seq[Statement]] = P(statement.rep(min = 1, sep = ("\n" | wsp.? ~ "\n") ~ wsp.?) ~ wsp.? ~ End)
+  val program: Parser[Seq[Statement]] = P(Start ~ wsp.? ~ statement.rep(min = 1, sep = wsp.?) ~ wsp.?)
 }

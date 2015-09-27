@@ -169,12 +169,12 @@ object Output {
 
   def generateModelIncludes(understood: Understood): String = """#include "watch_model.h""""
 
-  def translateAnimationCurve(curve: AnimationCurve): String = scalaz.Memo.mutableHashMapMemo {
+  val translateAnimationCurve = scalaz.Memo.mutableHashMapMemo[AnimationCurve, String] {
     case LinearCurve => "AnimationCurveLinear"
     case EaseOutCurve => "AnimationCurveEaseOut"
     case EaseInCurve => "AnimationCurveEaseIn"
     case EaseInOutCurve => "AnimationCurveEaseInOut"
-  }(curve)
+  }
 
   def generateAnimations(understood: Understood): String = {
     val updateAnimations = understood.animations.zipWithIndex.mkStringMap("\n\n") {
