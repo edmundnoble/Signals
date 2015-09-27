@@ -57,7 +57,7 @@ object Lexer {
             def tryToChain(animsSoFar: Seq[Animation], newAnim: AnimationDefinition): LexerError \/ Animation = {
               val delayWithErr =
                 if (newAnim.chained) {
-                  animsSoFar.lastOption.fold[LexerError \/ Int](FirstAnimationChained.left)(lastAnim ⇒
+                  animsSoFar.headOption.fold[LexerError \/ Int](FirstAnimationChained.left)(lastAnim ⇒
                     (newAnim.delay + lastAnim.delayMs + lastAnim.durationMs).right)
                 } else {
                   newAnim.delay.right[LexerError]

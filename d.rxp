@@ -1,0 +1,21 @@
+signal GRect sig_rect;
+
+stage {
+  intro {
+    linear for 1000ms after 10ms {
+      sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
+               to GRect(GPoint(180, 180), GSize(0, 0))
+    } then linear for 500ms {
+      sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
+               to GRect(GPoint(180, 180), GSize(0, 0))
+    }
+  }
+  forever (tick_time) => {
+    sig_color = GColorBlue;
+    sig_rect.origin = GPoint(tick_time->tm_hour, tick_time->tm_min);
+  }
+}
+
+layer clock_layer = (context) => {
+  graphics_fill_rect(context, sig_rect);
+}

@@ -61,8 +61,8 @@ object Parsers {
   val optionalDelay: Parser[Option[Int]] = P("after" ~ wsp ~ timePeriod ~ wsp).map(Some(_)) | P(Pass).map(_ => None)
   val animationComponent: Parser[AnimationComponent] = P(signalName.! ~ wsp ~ "from" ~ wsp ~ signalValue.! ~ wsp ~ "to" ~ wsp ~ signalValue.!).map(AnimationComponent.tupled)
   val animationDefinition: Parser[AnimationDefinition] = P(
-    (("then" ~ wsp).map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ animationCurve ~ wsp ~ "for" ~ wsp ~ timePeriod ~ //wsp ~ optionalDelay ~
-    Pass.map(_ ⇒ None) ~ wsp.? ~ "{" ~ wsp.? ~ animationComponent.rep(min = 0, sep = wsp.?) ~ wsp.? ~ "}").map {
+    (("then" ~ wsp).map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ animationCurve ~ wsp ~ "for" ~ wsp ~ timePeriod ~ wsp ~ optionalDelay ~
+      wsp.? ~ "{" ~ wsp.? ~ animationComponent.rep(min = 0, sep = wsp.?) ~ wsp.? ~ "}").map {
     case (chained, curve, duration, maybeDelay, components) => AnimationDefinition(chained, curve, duration, maybeDelay.getOrElse(0), components)
   }
   val introDefinition = P("intro" ~ wsp.? ~ "{" ~ wsp.? ~ animationDefinition.rep(min = 1, sep = wsp.?) ~ wsp.? ~ "}")
@@ -70,5 +70,5 @@ object Parsers {
   val stageDefinition: P[StageDefinition] = P(unordered(introDefinition, foreverDefinition, wsp.?)).map(StageDefinition.tupled)
   val stageDeclaration: P[Statement] = P("stage" ~ wsp.? ~ "{" ~ wsp.? ~ stageDefinition ~ wsp.? ~ "}")
   val statement: Parser[Statement] = P(signalDeclaration | typeDeclaration | layerDeclaration | constantDeclaration | stageDeclaration)
-  val program: Parser[Seq[Statement]] = P(Start ~ wsp.? ~ statement.rep(min = 1, sep = wsp.?) ~ wsp.?)
+  val program: Parser[Seq[Statement]] = P(Start ~ wsp.? ~ statement.rep(min = 1, sep = wsp.?) ~ wsp.? ~ End)
 }
