@@ -12,28 +12,16 @@ function int32_t get_hour_hand_angle() {{
   return tick_time->tm_hour * TRIG_MAX_ANGLE / 12 + tick_time->tm_min * TRIG_MAX_ANGLE / 60 / 12;
 }}
 
-function int32_t get_reverse_hour_hand_angle() {{
-  time_t t = time(NULL);
-  struct tm *tick_time = localtime(&t);
-  return 0;
-}}
-
 function int32_t get_minute_hand_angle() {{
   time_t t = time(NULL);
   struct tm *tick_time = localtime(&t);
   return tick_time->tm_min * TRIG_MAX_ANGLE / 60;
 }}
 
-function int32_t get_reverse_minute_hand_angle() {{
-  time_t t = time(NULL);
-  struct tm *tick_time = localtime(&t);
-  return 0;
-}}
-
 stage {{
   intro {{
     ease_in_out for 500ms {{
-      sig_clock from (Clock) { .hour_hand = get_reverse_hour_hand_angle(), .minute_hand = get_reverse_minute_hand_angle() };
+      sig_clock from (Clock) { .hour_hand = 0, .minute_hand = 0 };
                 to (Clock) { .hour_hand = get_hour_hand_angle(), .minute_hand = get_minute_hand_angle() };
     }}
   }}
