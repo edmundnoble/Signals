@@ -9,13 +9,13 @@ Everything that is RxPebble can be summed up in one word: _signals_.
 _Signals_ in RxPebble are push-based streams of data which can be consumed by the update_proc of a Pebble Layer. Signals all have types analogous to the Pebble C SDK types they represent. New signals can be declared using the __signal__ keyword.
 
 ```
-signal hour_angle : uint64_t
+signal uint64_t hour_angle;
 ```
 
 The behavior that generates signals is contained in the _Stage_.
 
 #### Stage
-The _stage_ is an area of an RxPebble program which describes all of the behavior of the program's signals. 
+The _stage_ is an area of an RxPebble program which describes the behavior of the program's signals. 
 
 #### Types
 All of the primitive types of RxPebble are the types exposed by the Pebble C SDK. Type aliases can be employed to give an extant type a new name, using the __type__ keyword.
@@ -34,13 +34,13 @@ type LayerWithColor = {
 ```
 
 #### Layers
-RxPebble can be used to define custom Pebble Layers and their `update_proc` callbacks. The code inside the update_proc callback is a super-set of C as according to the C11 standard. Signals can be referred to from the `update_proc` definition using the `${...}` notation as shown below. 
+RxPebble can be used to define custom Pebble Layers and their `update_proc` callbacks. The code inside the update_proc callback is a super-set of C as according to the C11 standard. Signals can be referred to directly from the `update_proc` definition as shown below. 
 
 ```
 signal uint64_t circle_radius;
 
 layer clock_layer = (ctx) => {
-	graphics_draw_circle(ctx, ${circle_radius});
+	graphics_draw_circle(ctx, circle_radius);
 }
 ```
 
@@ -94,9 +94,9 @@ stage {
       sig_color = GColorGreen;
     }
   }
-  forever (tick_time) => {
+  forever {
   	sig_color = GColorBlue;
-  	sig_rect.origin = GPoint(tick_time->tm_hour, tick_time
+  	sig_rect = GPoint(tick_time->tm_hour, tick_time
   }
 }
  

@@ -1,6 +1,6 @@
-package io.rxpebble
+package io.signals
 
-import io.rxpebble.Lexer.{Understood, DrawProc, Signal, StructField}
+import io.signals.Compiler._
 import org.scalatest.{Matchers, WordSpec}
 
 class OutputTests extends WordSpec with Matchers {
@@ -10,13 +10,13 @@ class OutputTests extends WordSpec with Matchers {
         """typedef struct type {
           |  Layer layer;
           |} type;""".stripMargin
-      Output.generateDefinition("type", Seq(Lexer.StructField("layer", "Layer"))) should be(correct)
+      Output.generateDefinition("type", StructDef(native = false, Seq(Compiler.StructField("layer", "Layer")))) should be(correct)
     }
     "have correct declarations generated" in {
       val correct =
         """struct type;
           |typedef struct type type;""".stripMargin
-      Output.generateForwardTypeDeclaration("type", Seq(Lexer.StructField("layer", "Layer"))) should be(correct)
+      Output.generateForwardTypeDeclaration("type", StructDef(native = false, Seq(Compiler.StructField("layer", "Layer")))) should be(correct)
     }
   }
 
@@ -35,7 +35,7 @@ class OutputTests extends WordSpec with Matchers {
           |
           |static uint64_t sig_test;""".stripMargin
       val testResult = Output.generateStaticDeclarations(
-        Lexer.Understood(Map.empty, Map.empty, Seq(Lexer.Signal("sig_test", "uint64_t")), Map.empty)
+        Compiler.Understood(Map.empty, Map.empty, Seq(Compiler.Signal("sig_test", "uint64_t")), Map.empty)
       )
       testResult should be(correct)
     }
@@ -45,7 +45,7 @@ class OutputTests extends WordSpec with Matchers {
         |  sig_test = new_value;
         |  layer_mark_dirty(test_layer);
         |}""".stripMargin
-      val program = Lexer.Understood(Map.empty, Map.empty, Seq(Lexer.Signal("sig_test", "uint64_t")), Map("test_layer" -> Lexer.DrawProc("", "")))
+      val program = Compiler.Understood(Map.empty, Map.empty, Seq(Compiler.Signal("sig_test", "uint64_t")), Map("test_layer" -> Compiler.DrawProc("", "")))
       val testResult = Output.generateSignalHandlers(program)
       testResult should be(correct)
     }
@@ -54,7 +54,7 @@ class OutputTests extends WordSpec with Matchers {
   "Layers" should {
     "have correct declarations generated" in {
       val correct = "static Window *window;\nstatic Layer *test_layer;\n"
-      val program = Lexer.Understood(Map.empty, Map.empty, Seq.empty, Map("test_layer" -> Lexer.DrawProc("", "")))
+      val program = Compiler.Understood(Map.empty, Map.empty, Seq.empty, Map("test_layer" -> Compiler.DrawProc("", "")))
       val testResult = Output.generateStaticDeclarations(program)
       testResult should be(correct)
     }
@@ -63,11 +63,11 @@ class OutputTests extends WordSpec with Matchers {
         """static void test_layer_draw_proc(Layer *layer, GContext *ctx) {
           |  test_stuff();
           |}""".stripMargin
-      val program = Lexer.Understood(
+      val program = Compiler.Understood(
         Map.empty,
         Map.empty,
         Seq.empty,
-        Map("test_layer" -> Lexer.DrawProc("  test_stuff();", "ctx")))
+        Map("test_layer" -> Compiler.DrawProc("  test_stuff();", "ctx")))
       val testResult = Output.generateDrawProcs(program)
       testResult should be(correct)
     }
@@ -106,6 +106,7 @@ class OutputTests extends WordSpec with Matchers {
                       |  clock_layer = layer_create(bounds);
                       |  layer_set_update_proc(clock_layer, clock_layer_draw_proc);
                       |  layer_add_child(window_layer, clock_layer);
+                      |  watch_model_init();
                       |}
                       |
                       |static void window_unload(Window *window) {
@@ -132,12 +133,12 @@ class OutputTests extends WordSpec with Matchers {
                       |}""".stripMargin
 
       val typeAliases = Map("uint64_t" -> "qword", "GColor8" -> "GColor", "VoiceUIData" -> "VoiceWindow")
-      val structDefinitions = Map("GSize" -> Seq(StructField("w", "int32_t"), StructField("h", "int32_t")),
-                                  "GPoint" -> Seq(StructField("x", "int32_t"), StructField("y", "int32_t")),
-                                  "GRect" -> Seq(StructField("origin", "GPoint"), StructField("size", "GSize")))
+      val structDefinitions = Map("GSize" -> StructDef(false, Seq(StructField("w", "int32_t"), StructField("h", "int32_t"))),
+                                  "GPoint" -> StructDef(false, Seq(StructField("x", "int32_t"), StructField("y", "int32_t"))),
+                                  "GRect" -> StructDef(false, Seq(StructField("origin", "GPoint"), StructField("size", "GSize"))))
       val signals = Seq(Signal("sig_rect", "GRect"), Signal("sig_pnt", "GPoint"))
       val layers = Map("clock_layer" -> DrawProc("  graphics_fill_rect(ctx, sig_rect);", "ctx"))
-      val program = Lexer.Understood(typeAliases, structDefinitions, signals, layers)
+      val program = Compiler.Understood(typeAliases, structDefinitions, signals, layers)
       val testResult = Output.generateMainFile(program)
       testResult should be(correct)
     }
@@ -160,7 +161,7 @@ class OutputTests extends WordSpec with Matchers {
           |}""".stripMargin
       val program = Understood(
         typeAliases = Map.empty,
-        structDefinitions = Map("GSize" -> Seq(StructField("w", "int32_t"), StructField("h", "int32_t"))),
+        structDefinitions = Map("GSize" -> StructDef(false, Seq(StructField("w", "int32_t"), StructField("h", "int32_t")))),
         signals = Seq.empty, layers = Map.empty)
       val testResult = Output.generateInterpolators(program)
       testResult should be(correct)

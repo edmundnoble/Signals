@@ -1,27 +1,43 @@
-signal GRect sig_rect;
+signal GPoint sig_hour_hand;
+signal GPoint sig_minute_hand;
 signal GColor8 sig_color;
 
-stage {
-  intro {
-    linear for 1000ms after 100ms {
-      sig_rect from GRect(GPoint(0, 0), GSize(180, 180))
-               to GRect(GPoint(180, 180), GSize(0, 0))
-    } then linear for 1000ms after 100ms {
-      sig_rect from GRect(GPoint(180, 180), GSize(0, 0))
-               to GRect(GPoint(0, 0), GSize(180, 180))
-    }
-    linear for 2000ms {
-      sig_color = GColorBlue
-    } then linear for 1000ms {
-      sig_color = GColorGreen
-    }
-  }
-  forever (tick_time) => {
-    sig_color = GColorBlue
-    sig_rect.origin = GPoint(tick_time->tm_hour, tick_time->tm_min)
-  }
-}
+function GPoint get_hour_hand_point() {{
+  time_t t = time(NULL);
+  struct tm *tick_time = localtime(&t);
+  return gpoint_from_polar(GRect(10, 10, 170, 170), GOvalScaleModeFitCircle, tick_time->tm_hour * TRIG_MAX_ANGLE / 12 +
+                                                                             tick_time->tm_min * TRIG_MAX_ANGLE / 60 / 12);
+}}
 
- layer clock_layer = (ctx) => {
-   graphics_fill_rect(ctx, sig_rect);
- }
+function GPoint get_minute_hand_point() {{
+  time_t t = time(NULL);
+  struct tm *tick_time = localtime(&t);
+  return gpoint_from_polar(GRect(10, 10, 170, 170), GOvalScaleModeFitCircle, tick_time->tm_min * TRIG_MAX_ANGLE / 60);
+}}
+
+stage {{
+  intro {{
+    linear for 1000ms after 100ms {{
+      temp GPoint final_hour = get_hour_hand_point();
+      sig_hour_hand from GPoint(0, 0);
+                    to final_hour;
+      temp GPoint final_minute = get_minute_hand_point();
+      sig_minute_hand from GPoint(0, 0);
+                      to final_minute;
+    }}
+    linear for 2000ms {{
+      sig_color = GColorBlue;
+    }} then linear for 1000ms {{
+      sig_color = GColorGreen;
+    }}
+  }}
+  forever {{
+    sig_color = GColorBlue;
+    sig_hour_hand = gpoint_from_polar(GRect(0, 0, 180, 180), GOvalScaleModeFitCircle, tick_time->tm_hour * TRIG_MAX_ANGLE / 12);
+    sig_minute_hand = gpoint_from_polar(GRect(0, 0, 180, 180), GOvalScaleModeFitCircle, tick_time->tm_min * TRIG_MAX_ANGLE / 60);
+  }}
+}}
+
+layer clock_layer = (ctx) => {{
+  graphics_context_set_fill_color(ctx, sig_color);
+}}

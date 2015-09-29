@@ -18,6 +18,8 @@ syn keyword rxpAnimate animate
 syn keyword rxpThen then
 syn keyword rxpFrom from
 syn keyword rxpTo to
+syn keyword rxpTemp temp
+syn keyword rxpFunction function
 syn match rxpLayerDeclaration /\<[_A-Za-z0-9$]\+\>/ contained
 syn keyword rxpLayer layer nextgroup=rxpLayerDeclaration skipwhite
 syn match rxpFunctionArrow "=>"
@@ -48,6 +50,8 @@ hi def link rxpAfter     Keyword
 hi def link rxpFrom      Keyword
 hi def link rxpTo        Keyword
 hi def link rxpLayer     Keyword
+hi def link rxpTemp      Keyword
+hi def link rxpFunction  Keyword
 hi def link rxpLayerDeclaration Identifier
 hi def link rxpFunctionArrow Keyword
 
