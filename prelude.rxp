@@ -1,14 +1,14 @@
 type GPoint = native {{
   int32_t x,
   int32_t y
-}};
+}}
 
 type GSize = native {{
   int32_t w,
   int32_t h
-}};
+}}
 
 type GRect = native {{
   GPoint origin,
   GSize size
-}};
+}}

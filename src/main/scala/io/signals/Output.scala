@@ -119,7 +119,6 @@ object Output {
     // TODO: Automatically detect which layers a signal touches?
     val markDirties = understood.layers.mkStringMap("\n") { case (layerName, _) => s"  layer_mark_dirty($layerName);" }
     val setters = understood.signals.map { signal => s"  ${signal.signalName} = new_value;" }
-    // TODO: WTF?
     (functionSigs, setters).zipped.map {
       case (sig, setter) => sig + "\n" + setter + "\n" + markDirties + "\n}"
     } mkString "\n\n"
@@ -142,17 +141,20 @@ object Output {
                      |  const GRect bounds = layer_get_bounds(window_layer);
                      |  window_set_background_color(window, GColorBlack);""".stripMargin
     val layerLoad = understood.layers.mkStringMap("\n") {
-      case (layerName, drawProc) =>
+      case (layerName, _) =>
         s"  $layerName = layer_create(bounds);\n" +
-          s"  layer_set_update_proc($layerName, ${drawProcName(layerName)});\n" +
-          s"  layer_add_child(window_layer, $layerName);"
+          s"  layer_set_update_proc($layerName, ${drawProcName(layerName)});\n"
+    }
+    val layerAddChild = understood.layers.mkStringMap("\n") {
+      case (layerName, _) ⇒
+        s"  layer_add_child(window_layer, $layerName);"
     }
     val modelLoad = s"  watch_model_init();"
     val defineUnload = "static void window_unload(Window *window) {"
     val layerUnload = understood.layers.mkStringMap("\n") {
       case (layerName, drawProc) => s"  layer_destroy($layerName);"
     }
-    val windowLoadCode = s"$defineLoad\n$bodyLoad\n$layerLoad\n$modelLoad\n}"
+    val windowLoadCode = s"$defineLoad\n$bodyLoad\n$layerLoad\n$modelLoad\n$layerAddChild}"
     val windowUnloadCode = s"$defineUnload\n$layerUnload"
     val allWindowHandlers = s"$windowLoadCode\n\n$windowUnloadCode\n}"
     allWindowHandlers
@@ -253,11 +255,11 @@ object Output {
       case InterpolatedAnimationComponent(signalName, _, _) ⇒ signalName == sig.signalName
       case ConstantAnimationComponent(signalName, _) ⇒ signalName == sig.signalName
     }))
-    val maxAnimations = relatedAnimations.map {
-      case (sig, anims) ⇒ (sig, anims.minBy(anim ⇒ anim.durationMs + anim.delayMs))
+    val maxAnimations = relatedAnimations.flatMap {
+      case (sig, anims) ⇒ if (anims.isEmpty) None else Some((sig, anims.minBy(anim ⇒ anim.durationMs + anim.delayMs)))
     }
-    val minAnimations = relatedAnimations.map {
-      case (sig, anims) ⇒ (sig, anims.minBy(_.delayMs))
+    val minAnimations = relatedAnimations.flatMap {
+      case (sig, anims) ⇒ if (anims.isEmpty) None else Some((sig, anims.minBy(_.delayMs)))
     }
     val makeAnimations = understood.animations.zipWithIndex.mkStringMap("\n\n") {
       case (anim@Animation(durationMs, delayMs, curve, _, _), index) =>
@@ -317,12 +319,22 @@ object Output {
   }
 
   def generateStartIntroAnimation(understood: Understood): String = {
-    "void watch_model_start_intro_animation(void) {\n" +
-      understood.animations.indices.mkStringMap("\n") { index ⇒
-        s"  Animation *animation_$index = make_animation_$index();"
-      } +
-      s"\n  Animation *all_animations = animation_spawn_create(${understood.animations.indices.map(i ⇒ s"animation_$i").mkString(", ")});\n" +
-      "  animation_schedule(all_animations);\n" + "}"
+    val signature = "void watch_model_start_intro_animation(void) {"
+    val startAnimations =
+      if (understood.animations.isEmpty) {
+        ""
+      } else {
+        val allAnimations = if (understood.animations.tail.isEmpty) {
+          s"  Animation *all_animations = make_animation_0();\n"
+        } else {
+          understood.animations.indices.mkStringMap("\n") { index ⇒
+            s"  Animation *animation_$index = make_animation_$index();"
+          } +
+            s"\n  Animation *all_animations = animation_spawn_create(${understood.animations.indices.map(i ⇒ s"animation_$i").mkString(", ")});\n"
+        }
+        allAnimations + "  animation_schedule(all_animations);"
+      }
+    signature + "\n" + startAnimations + "\n}"
   }
 
   def componentHasSignal(signal: String)(comp: AnimationComponent): Boolean = {
@@ -340,12 +352,14 @@ object Output {
     val signature = s"void watch_model_init(void) {"
     val signalInit = understood.signals.map { signal ⇒
       val components =
-        understood.animations.flatMap(a ⇒ a.components.map((a.delayMs, _)).toMap)
-          .filter(p ⇒ componentHasSignal(signal.signalName)(p._2))
+        understood.animations.map(a ⇒ (a.delayMs, a.components.filter(componentHasSignal(signal.signalName)))).filter(_._2.nonEmpty)
       if (components.isEmpty) {
+        println(s"All components: ${understood.animations.flatMap(_.components)}")
+        println(s"Couldn't find animation for start of ${signal.signalName}")
         s"  ${isAnimatedName(signal.signalName)} = false;"
       } else {
-        val firstAnimationComponent = components.minBy(_._1)._2
+        println(s"Found animation for start of ${signal.signalName}")
+        val firstAnimationComponent = components.minBy(_._1)._2.head
         s"  ${isAnimatedName(signal.signalName)} = true;\n" + (firstAnimationComponent match {
           case InterpolatedAnimationComponent(_, fromValue, _) ⇒
             s"  ${generateSignalHandlerName(signal.signalName)}($fromValue);"

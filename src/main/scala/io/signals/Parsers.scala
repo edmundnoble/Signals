@@ -45,7 +45,8 @@ object Parsers {
   val tickTimeName = P(ident)
   val functionName = P(ident)
   val animationCurve: Parser[Compiler.AnimationCurve] = P(
-    P("linear").map(_ => LinearCurve) | P("ease_out").map(_ => EaseOutCurve) | P("ease_in").map(_ => EaseInCurve) | P("ease_in_out").map(_ => EaseInOutCurve)
+    P("ease_in_out").map(_ => EaseInOutCurve) | P("linear").map(_ => LinearCurve) |
+      P("ease_out").map(_ => EaseOutCurve) | P("ease_in").map(_ => EaseInCurve)
   )
   val timePeriod: Parser[Int] = P(CharIn("-").?.! ~ CharsWhile(Character.isDigit).! ~ "ms").map {
     case (neg, number) => (neg + number).toInt
@@ -54,12 +55,12 @@ object Parsers {
   val signalDeclaration: Parser[SignalDeclaration] = P("signal" ~ wsp ~ typeName.! ~ wsp ~ signalName.! ~ wsp.? ~ ";" ~ newline).map {
     case (typeIdentifier, signalIdentifier) ⇒ SignalDeclaration(signalIdentifier = signalIdentifier, typeIdentifier = typeIdentifier)
   }
-  val typeAliasDeclaration: Parser[TypeAliasDeclaration] = P(typeName.!).map(TypeAliasDeclaration).log()
+  val typeAliasDeclaration: Parser[TypeAliasDeclaration] = P(typeName.! ~ wsp.? ~ ";").map(TypeAliasDeclaration).log()
   val typeStructFieldDeclaration: Parser[TypeStructField] = P(typeName.! ~ wsp ~ fieldName.!).map(tup ⇒ TypeStructField.tupled(tup.swap)).log()
   val typeStructFields: Parser[Seq[TypeStructField]] = P(typeStructFieldDeclaration.rep(sep = wsp.? ~ "," ~ wsp.?, min = 1)).log()
   val typeStructDeclaration: Parser[TypeStructDeclaration] = P((P("native" ~ wsp).map(_ ⇒ true) | Pass.map(_ ⇒ false)) ~ "{{" ~ wsp.? ~ typeStructFields ~ wsp.? ~ "}}").map(TypeStructDeclaration.tupled)
   val structOrAlias: Parser[Either[TypeStructDeclaration, TypeAliasDeclaration]] = P(typeStructDeclaration.map(Left.apply) | typeAliasDeclaration.map(Right.apply)).log()
-  val typeDeclaration: Parser[TypeDeclaration] = P("type" ~ wsp ~ typeName.! ~ wsp.? ~ "=" ~ wsp.? ~ structOrAlias ~ wsp.? ~ ";").map(TypeDeclaration.tupled).log()
+  val typeDeclaration: Parser[TypeDeclaration] = P("type" ~ wsp ~ typeName.! ~ wsp.? ~ "=" ~ wsp.? ~ structOrAlias).map(TypeDeclaration.tupled).log()
   val drawProcDefinition: Parser[(String, String)] = P("(" ~ ident.! ~ ")" ~ wsp.? ~ "=>" ~ wsp.? ~ "{{" ~ signalValue.! ~ "}}")
   val layerDeclaration: Parser[Statement] = P("layer" ~ wsp ~ layerName.! ~ wsp.? ~ "=" ~ wsp.? ~ drawProcDefinition)
     .map(t => LayerDeclaration.tupled((t._1, t._2._1, t._2._2)))
