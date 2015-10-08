@@ -393,7 +393,7 @@ object Output {
   }
 
   def generateFunctions(understood: Understood): String = {
-    understood.functions.mkStringMap("\n")(f => s"${f.functionSignature} {\n${f.functionBody}\n}")
+    understood.functions.mkStringMap("\n\n")(f => s"${f.functionSignature} {${f.functionBody}}")
   }
 
   def generateModel(understood: Understood): String = {
