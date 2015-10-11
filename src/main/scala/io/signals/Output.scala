@@ -232,7 +232,7 @@ object Output {
   }
 
   def generateAnimations(understood: Understood): String = {
-    val updateAnimations = understood.animations.zipWithIndex.mkStringMap("\n\n") {
+    val updateAnimations = understood.introAnimations.zipWithIndex.mkStringMap("\n\n") {
       case (Animation(durationMs, delayMs, curve, components, temps), index) =>
         s"""static void update_animation_$index(Animation *animation, const AnimationProgress animation_progress) {
                                                  |${
@@ -251,7 +251,7 @@ object Output {
             |}""".stripMargin
     }
 
-    val relatedAnimations = understood.signals.map(sig ⇒ sig → understood.animations.filter(_.components.exists {
+    val relatedAnimations = understood.signals.map(sig ⇒ sig → understood.introAnimations.filter(_.components.exists {
       case InterpolatedAnimationComponent(signalName, _, _) ⇒ signalName == sig.signalName
       case ConstantAnimationComponent(signalName, _) ⇒ signalName == sig.signalName
     }))
@@ -261,7 +261,7 @@ object Output {
     val minAnimations = relatedAnimations.flatMap {
       case (sig, anims) ⇒ if (anims.isEmpty) None else Some((sig, anims.minBy(_.delayMs)))
     }
-    val makeAnimations = understood.animations.zipWithIndex.mkStringMap("\n\n") {
+    val makeAnimations = understood.introAnimations.zipWithIndex.mkStringMap("\n\n") {
       case (anim@Animation(durationMs, delayMs, curve, _, _), index) =>
         val baseMakeAnimation = s"static Animation *make_animation_$index(void) {\n" +
           s"  Animation *animation_$index = animation_create();\n" +
@@ -321,16 +321,16 @@ object Output {
   def generateStartIntroAnimation(understood: Understood): String = {
     val signature = "void watch_model_start_intro_animation(void) {"
     val startAnimations =
-      if (understood.animations.isEmpty) {
+      if (understood.introAnimations.isEmpty) {
         ""
       } else {
-        val allAnimations = if (understood.animations.tail.isEmpty) {
+        val allAnimations = if (understood.introAnimations.tail.isEmpty) {
           s"  Animation *all_animations = make_animation_0();\n"
         } else {
-          understood.animations.indices.mkStringMap("\n") { index ⇒
+          understood.introAnimations.indices.mkStringMap("\n") { index: Int ⇒
             s"  Animation *animation_$index = make_animation_$index();"
           } +
-            s"\n  Animation *all_animations = animation_spawn_create(${understood.animations.indices.map(i ⇒ s"animation_$i").mkString(", ")});\n"
+            s"\n  Animation *all_animations = animation_spawn_create(${understood.introAnimations.indices.map(i ⇒ s"animation_$i").mkString(", ")});\n"
         }
         allAnimations + "  animation_schedule(all_animations);"
       }
@@ -352,9 +352,8 @@ object Output {
     val signature = s"void watch_model_init(void) {"
     val signalInit = understood.signals.map { signal ⇒
       val components =
-        understood.animations.map(a ⇒ (a.delayMs, a.components.filter(componentHasSignal(signal.signalName)))).filter(_._2.nonEmpty)
+        understood.introAnimations.map(a ⇒ (a.delayMs, a.components.filter(componentHasSignal(signal.signalName)))).filter(_._2.nonEmpty)
       if (components.isEmpty) {
-        println(s"All components: ${understood.animations.flatMap(_.components)}")
         println(s"Couldn't find animation for start of ${signal.signalName}")
         s"  ${isAnimatedName(signal.signalName)} = false;"
       } else {
@@ -375,7 +374,7 @@ object Output {
 
   def isAnimatedName(signalName: String) = s"s_is_animated_$signalName"
 
-  def generateForevers(understood: Understood): String = {
+  def generateTickTimeHandler(understood: Understood): String = {
     val foreverSignature = "static void prv_tick_time_handler(struct tm *tick_time, TimeUnits units_changed) {"
     val temps = understood.forever.temps.mkStringMap("\n")(_.body)
     val timeHandlerRunners = understood.signals.mkStringMap("\n") { s ⇒
@@ -398,6 +397,6 @@ object Output {
 
   def generateModel(understood: Understood): String = {
     runAndAppend(understood, "\n\n")(generateModelIncludes, generateInterpolators, generateAnimationState,
-      generateFunctions, generateAnimations, generateForevers, generateStartIntroAnimation, generateModelInit)
+      generateFunctions, generateAnimations, generateTickTimeHandler, generateStartIntroAnimation, generateModelInit)
   }
 }

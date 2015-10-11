@@ -1,11 +1,29 @@
 package io.signals
 
+import java.util.concurrent.TimeUnit
+
 import io.signals.Parsers._
 import shapeless._
+import scala.language.higherKinds
 import scalaz.{Lens ⇒ _, _}
 import Scalaz._
 
 object Compiler {
+
+  implicit class PartialFoldLeftSyntax[A](t: Seq[A]) {
+    def partialFoldLeft[B: Monoid](pf: PartialFunction[A, B]): B = {
+      t.foldLeft[B](Monoid[B].zero) { (acc: B, next: A) ⇒
+        acc |+| pf.orElse[A, B] { case _ ⇒ Monoid[B].zero }.apply(next)
+      }
+    }
+  }
+  implicit def errorMonoid[A, B: Monoid]: Monoid[A \/ B] = new Monoid[A \/ B] {
+    override def zero: A \/ B = Monoid[B].zero.right
+    override def append(f1: A \/ B, f2: ⇒ A \/ B): A \/ B = for {
+      x ← f1
+      y ← f2
+    } yield x |+| y
+  }
   type Type = String
 
   sealed trait AnimationCurve
@@ -27,18 +45,22 @@ object Compiler {
                        temps: Seq[TempDefinition])
 
   case class Understood(typeAliases: Map[Type, Type] = Map.empty, structDefinitions: Map[Type, StructDef] = Map.empty,
-                        signals: Seq[Signal] = Seq.empty, layers: Map[String, DrawProc] = Map.empty, animations: Seq[Animation] = Seq.empty,
-                        forever: Forever = null, functions: Seq[FunctionDeclaration] = Seq.empty)
+                        signals: Seq[Signal] = Seq.empty, layers: Map[String, DrawProc] = Map.empty, introAnimations: Seq[Animation] = Seq.empty,
+                        periodicAnimations: Seq[(PeriodicPeriod, Seq[Animation])] = Seq.empty, forever: Forever = null, functions: Seq[FunctionDeclaration] = Seq.empty)
 
   sealed class CompilerError
-  val FirstAnimationChained = new CompilerError {}
-  val UndefinedSignalInAnimation = new CompilerError {}
+  case object FirstAnimationChained extends CompilerError
+  case object UndefinedSignalInAnimation extends CompilerError
+  case object TooManyForevers extends CompilerError
+  case object NoForever extends CompilerError
+  case object NoLayers extends CompilerError
+  case object TooManyIntros extends CompilerError
 
   val typeAliasLens: Lens[Understood, Map[Type, Type]] = lens[Understood] >> 'typeAliases
   val structDefinitionLens: Lens[Understood, Map[Type, StructDef]] = lens[Understood] >> 'structDefinitions
   val signalLens: Lens[Understood, Seq[Signal]] = lens[Understood] >> 'signals
   val layersLens: Lens[Understood, Map[String, DrawProc]] = lens[Understood] >> 'layers
-  val animationLens: Lens[Understood, Seq[Animation]] = lens[Understood] >> 'animations
+  val introAnimationLens: Lens[Understood, Seq[Animation]] = lens[Understood] >> 'introAnimations
   val foreverLens: Lens[Understood, Forever] = lens[Understood] >> 'forever
   val functionLens: Lens[Understood, Seq[FunctionDeclaration]] = lens[Understood] >> 'functions
 
@@ -46,13 +68,40 @@ object Compiler {
     override def append(f1: Understood, f2: ⇒ Understood): Understood = f1
   }
 
-  def verifyAnimations(understood: Understood): ValidationNel[CompilerError, Understood] = {
-    understood.animations.flatMap(_.components.map {
+  def verifyIntroAnimations(understood: Understood): ValidationNel[CompilerError, Understood] = {
+    understood.introAnimations.flatMap(_.components.map {
       case InterpolatedAnimationComponent(signal, _, _) ⇒
         understood.successNel.ensure(UndefinedSignalInAnimation.wrapNel)(_.signals.exists(_.signalName == signal))
       case ConstantAnimationComponent(signal, _) ⇒
         understood.successNel.ensure(UndefinedSignalInAnimation.wrapNel)(_.signals.exists(_.signalName == signal))
-    }).reduce(_ +|+ _)
+    }).reduce(_ +++ _)
+  }
+
+  def verifyEverythingDefined(understood: Understood): ValidationNel[CompilerError, Understood] = {
+    understood.successNel.ensure(NoForever.wrapNel)(_.forever != null) +++
+      understood.successNel.ensure(NoLayers.wrapNel)(_.layers.nonEmpty)
+  }
+
+  def translateAnimations(animationDefinitions: Seq[AnimationDefinition]): CompilerError \/ Seq[Animation] = {
+    def tryToChain(animsSoFar: Seq[Animation], newAnim: AnimationDefinition): CompilerError \/ Animation = {
+      val delayWithErr =
+        if (newAnim.chained) {
+          animsSoFar.headOption.fold[CompilerError \/ Int](FirstAnimationChained.left)(lastAnim ⇒
+            (newAnim.delay + lastAnim.delayMs + lastAnim.durationMs).right)
+        } else {
+          newAnim.delay.right[CompilerError]
+        }
+      delayWithErr.map { delay ⇒
+        Animation(newAnim.duration, delay, newAnim.curve, newAnim.components.flatMap(_.left.toOption),
+          newAnim.components.flatMap(_.right.toOption))
+      }
+    }
+    animationDefinitions.foldLeft(Seq[Animation]().right[CompilerError]) { (soFar, newAnimDef) ⇒
+      for {
+        animsSoFar ← soFar
+        newAnim ← tryToChain(animsSoFar, newAnimDef)
+      } yield newAnim +: animsSoFar
+    }
   }
 
   def understand(program: Seq[Parsers.Statement]): ValidationNel[CompilerError, Understood] = {
@@ -69,31 +118,35 @@ object Compiler {
             })
           case Parsers.LayerDeclaration(layerName, contextName, code) ⇒
             layersLens.modify(understoodSoFar)(as ⇒ as + (layerName → DrawProc(code, contextName))).right
-          case Parsers.StageDefinition(animationDefinitions, forever) ⇒
-            def tryToChain(animsSoFar: Seq[Animation], newAnim: AnimationDefinition): CompilerError \/ Animation = {
-              val delayWithErr =
-                if (newAnim.chained) {
-                  animsSoFar.headOption.fold[CompilerError \/ Int](FirstAnimationChained.left)(lastAnim ⇒
-                    (newAnim.delay + lastAnim.delayMs + lastAnim.durationMs).right)
-                } else {
-                  newAnim.delay.right[CompilerError]
-                }
-              delayWithErr.map { delay ⇒
-                Animation(newAnim.duration, delay, newAnim.curve, newAnim.components.flatMap(_.left.toOption),
-                  newAnim.components.flatMap(_.right.toOption))
+          case Parsers.StageDefinition(stageComponents) ⇒
+            val numForevers = stageComponents.count(_.isInstanceOf[ForeverDefinition])
+            val numIntros = stageComponents.count(_.isInstanceOf[IntroDefinition])
+            if (numIntros > 1) {
+              TooManyIntros.left
+            } else if (numForevers > 1) {
+              TooManyForevers.left
+            } else if (numForevers == 0) {
+              NoForever.left
+            } else {
+              val introAnimationsWithErr = stageComponents.partialFoldLeft {
+                case IntroDefinition(animations) ⇒ translateAnimations(animations).map(_.toVector)
               }
-            }
-            val animationsWithErr = animationDefinitions.foldLeft[CompilerError \/ Seq[Animation]](Seq[Animation]().right[CompilerError]) { (soFar, newAnimDef) ⇒
+              val forever = stageComponents.partialFoldLeft {
+                case ForeverDefinition(components) ⇒
+                  Vector(Forever(components.flatMap(_.left.toOption), components.flatMap(_.right.toOption)))
+              }.head
+              val periodicAnimationsWithErr = stageComponents.partialFoldLeft {
+                case PeriodicDefinition(period, periodAnimations) ⇒ translateAnimations(periodAnimations).map { animations ⇒
+                  Vector((period, animations))
+                }
+              }
               for {
-                animsSoFar ← soFar
-                newAnim ← tryToChain(animsSoFar, newAnimDef)
-              } yield newAnim +: animsSoFar
-            }
-            println(forever.components)
-            animationsWithErr.map { animations ⇒
-              understoodSoFar.copy(
-                animations = animations,
-                forever = Forever(forever.components.flatMap(_.left.toOption), forever.components.flatMap(_.right.toOption))
+                introAnimations ← introAnimationsWithErr
+                periodicAnimations ← periodicAnimationsWithErr
+              } yield understoodSoFar.copy(
+                introAnimations = introAnimations,
+                periodicAnimations = periodicAnimations,
+                forever = forever
               )
             }
           case decl@Parsers.FunctionDeclaration(_, _) ⇒
@@ -101,6 +154,6 @@ object Compiler {
         }
       }
     }.validation.leftMap(_.wrapNel)
-    compiled +|+ compiled.flatMap(verifyAnimations)
+    compiled +++ compiled.flatMap(verifyIntroAnimations) +++ compiled.flatMap(verifyEverythingDefined)
   }
 }

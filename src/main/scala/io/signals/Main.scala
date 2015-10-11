@@ -6,6 +6,7 @@ import java.nio.file.{FileAlreadyExistsException, Files, Paths}
 import fastparse.core.Result
 
 import scala.io.Source
+import scalaz.{Success, Failure}
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -20,7 +21,10 @@ object Main {
     val targetPath = Paths.get(args(1))
     try { Files.createDirectory(targetPath) } catch { case _: FileAlreadyExistsException ⇒ }
     val programParseResult = Parsers.program.parse(programText)
-    val compiled = Compiler.understand(programParseResult.get.value).disjunction.toOption.get
+    val compiled = Compiler.understand(programParseResult.get.value) match {
+      case Failure(failures) ⇒ println(failures); sys.exit(1)
+      case Success(result) ⇒ result
+    }
     val source = Output.mkProgram(compiled)
     source.foreach {
       case (fileName, code) ⇒

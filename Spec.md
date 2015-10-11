@@ -1,12 +1,12 @@
-# RxPebble Specfication
+# Signals Specfication
 
 ## Semantics
 
 ### Language Elements
-Everything that is RxPebble can be summed up in one word: _signals_.
+Everything that is Signals can be summed up in one word: _signals_.
 
 #### Signals
-_Signals_ in RxPebble are push-based streams of data which can be consumed by the update_proc of a Pebble Layer. Signals all have types analogous to the Pebble C SDK types they represent. New signals can be declared using the __signal__ keyword.
+_Signals_ in Signals are push-based streams of data which can be consumed by the update_proc of a Pebble Layer. Signals all have types analogous to the Pebble C SDK types they represent. New signals can be declared using the __signal__ keyword.
 
 ```
 signal uint64_t hour_angle;
