@@ -1,5 +1,7 @@
 package io.signals
 
+import java.util.concurrent.TimeUnit
+
 import io.signals.Compiler._
 import io.signals.Parsers.{ConstantAnimationComponent, AnimationComponent, InterpolatedAnimationComponent}
 
@@ -12,7 +14,6 @@ object Output {
   }
   implicit class WithMkStringMap[A](val ts: TraversableOnce[A]) extends AnyVal {
     def mkStringMap[B](delim: String)(f: A => B): String = {
-      // ts.map(f).mkString(delim)
       val sb = new StringBuilder()
       var first = true
       for (a ← ts) {
@@ -116,7 +117,7 @@ object Output {
       case Compiler.Signal(signalName, signalType) =>
         generateSignalHandlerSignature(signalName, signalType) + " {"
     }
-    // TODO: Automatically detect which layers a signal touches?
+    // TODO: Automatically detect which layers read a signal?
     val markDirties = understood.layers.mkStringMap("\n") { case (layerName, _) => s"  layer_mark_dirty($layerName);" }
     val setters = understood.signals.map { signal => s"  ${signal.signalName} = new_value;" }
     (functionSigs, setters).zipped.map {
@@ -232,10 +233,10 @@ object Output {
   }
 
   def generateAnimations(understood: Understood): String = {
-    val updateAnimations = understood.introAnimations.zipWithIndex.mkStringMap("\n\n") {
+    val introAnimationUpdaters = understood.introAnimations.zipWithIndex.mkStringMap("\n\n") {
       case (Animation(durationMs, delayMs, curve, components, temps), index) =>
-        s"""static void update_animation_$index(Animation *animation, const AnimationProgress animation_progress) {
-                                                 |${
+        s"""static void update_intro_animation_$index(Animation *animation, const AnimationProgress animation_progress) {
+                                                       |${
           temps.mkStringMap("\n")(_.body) + "\n" + components.mkStringMap("\n") {
             case InterpolatedAnimationComponent(signalName, startValue, endValue) =>
               val signal = understood.signals.find(_.signalName == signalName)
@@ -251,14 +252,14 @@ object Output {
             |}""".stripMargin
     }
 
-    val relatedAnimations = understood.signals.map(sig ⇒ sig → understood.introAnimations.filter(_.components.exists {
+    val relatedIntroAnimations = understood.signals.map(sig ⇒ sig → understood.introAnimations.filter(_.components.exists {
       case InterpolatedAnimationComponent(signalName, _, _) ⇒ signalName == sig.signalName
       case ConstantAnimationComponent(signalName, _) ⇒ signalName == sig.signalName
     }))
-    val maxAnimations = relatedAnimations.flatMap {
+    val maxIntroAnimations = relatedIntroAnimations.flatMap {
       case (sig, anims) ⇒ if (anims.isEmpty) None else Some((sig, anims.minBy(anim ⇒ anim.durationMs + anim.delayMs)))
     }
-    val minAnimations = relatedAnimations.flatMap {
+    val minIntroAnimations = relatedIntroAnimations.flatMap {
       case (sig, anims) ⇒ if (anims.isEmpty) None else Some((sig, anims.minBy(_.delayMs)))
     }
     val makeAnimations = understood.introAnimations.zipWithIndex.mkStringMap("\n\n") {
@@ -275,8 +276,8 @@ object Output {
             s"  animation_set_duration(animation_$index, $durationMs);\n" +
             s"  return animation_$index;\n" +
             s"}"
-        val lastAnimationFor = maxAnimations.filter { case (sig, otherAnim) ⇒ otherAnim == anim }
-        val firstAnimationFor = minAnimations.filter { case (sig, otherAnim) ⇒ otherAnim == anim }
+        val lastAnimationFor = maxIntroAnimations.filter { case (sig, otherAnim) ⇒ otherAnim == anim }
+        val firstAnimationFor = minIntroAnimations.filter { case (sig, otherAnim) ⇒ otherAnim == anim }
         val stoppedAnimationHandler = if (lastAnimationFor.nonEmpty) {
           s"static void stopped_animation_${index}_handler(Animation *animation, bool finished, void *context) {\n" +
             lastAnimationFor.mkStringMap("\n") {
@@ -315,8 +316,10 @@ object Output {
         stoppedAnimationHandler +|+ "\n\n" +|+ startedAnimationHandler +|+ "\n\n" +|+ baseMakeAnimation +|+ setHandlers +|+
           "\n" +|+ finishMakeAnimation
     }
-    updateAnimations +|+ "\n\n" +|+ makeAnimations
+    introAnimationUpdaters +|+ "\n\n" +|+ makeAnimations
   }
+
+  def getIntroAnimationNameForIndex(index: Int) = s"intro_animation_$index"
 
   def generateStartIntroAnimation(understood: Understood): String = {
     val signature = "void watch_model_start_intro_animation(void) {"
@@ -325,14 +328,17 @@ object Output {
         ""
       } else {
         val allAnimations = if (understood.introAnimations.tail.isEmpty) {
-          s"  Animation *all_animations = make_animation_0();\n"
+          s"  Animation *all_intro_animations = make_${getIntroAnimationNameForIndex(0)}();\n"
         } else {
           understood.introAnimations.indices.mkStringMap("\n") { index: Int ⇒
-            s"  Animation *animation_$index = make_animation_$index();"
+            val animationName = getIntroAnimationNameForIndex(index)
+            s"  Animation *$animationName = make_$animationName();"
           } +
-            s"\n  Animation *all_animations = animation_spawn_create(${understood.introAnimations.indices.map(i ⇒ s"animation_$i").mkString(", ")});\n"
+            s"\n  Animation *all_intro_animations = animation_spawn_create(${
+              understood.introAnimations.indices.mkStringMap(", ")(i ⇒ s"intro_animation_$i")
+            });\n"
         }
-        allAnimations + "  animation_schedule(all_animations);"
+        allAnimations + "  animation_schedule(all_intro_animations);"
       }
     signature + "\n" + startAnimations + "\n}"
   }
@@ -374,15 +380,33 @@ object Output {
 
   def isAnimatedName(signalName: String) = s"s_is_animated_$signalName"
 
+  def timeUpdaterName(signalName: String) = s"prv_${signalName}_updater"
+
+  val translateTimeUnitToPebble: Map[TimeUnit, String] = Map(
+    TimeUnit.SECONDS → "SECOND_UNIT",
+    TimeUnit.MINUTES → "MINUTE_UNIT",
+    TimeUnit.HOURS → "HOUR_UNIT",
+    TimeUnit.DAYS → "DAY_UNIT"
+  )
+
   def generateTickTimeHandler(understood: Understood): String = {
-    val foreverSignature = "static void prv_tick_time_handler(struct tm *tick_time, TimeUnits units_changed) {"
-    val temps = understood.forever.temps.mkStringMap("\n")(_.body)
-    val timeHandlerRunners = understood.signals.mkStringMap("\n") { s ⇒
-      s"  if (!${isAnimatedName(s.signalName)}) {\n" +
-        s"    ${generateSignalHandlerName(s.signalName)}(${understood.forever.components.find(_.signalName == s.signalName).get.value});\n" +
-        s"  }"
+    val timeUpdaters = understood.signals.mkStringMap("\n\n") { sig ⇒
+      s"static void ${timeUpdaterName(sig.signalName)}(struct tm *tick_time) {\n" +
+        s"  if (!${isAnimatedName(sig.signalName)}) {\n" +
+        s"    ${generateSignalHandlerName(sig.signalName)}(${understood.forever.components.find(_.signalName == sig.signalName).get.value});\n" +
+        s"  }\n}"
     }
-    foreverSignature + "\n" + temps + "\n" + timeHandlerRunners + "\n}"
+    val periodCounters = understood.periodicAnimations.mkStringMap("\n") { periodicAnimation ⇒
+      periodicAnimation._1.periodUnit
+    }
+    val foreverSignature = "static void prv_tick_time_handler(struct tm *tick_time, TimeUnits units_changed) {"
+    val signalsWithNoPeriodicAnimations = understood.signals.filter(sig ⇒ !understood.periodicAnimations.exists(_._2.exists(_.components.exists {
+      case ConstantAnimationComponent(signalName, _) ⇒ signalName == sig.signalName
+      case InterpolatedAnimationComponent(signalName, _, _) ⇒ signalName == sig.signalName
+    })))
+    val timeUpdaterRunners = signalsWithNoPeriodicAnimations.map(sig ⇒ s"${timeUpdaterName(sig.signalName)}()")
+    val temps = understood.forever.temps.mkStringMap("\n")(_.body)
+    timeUpdaters + "\n\n" + foreverSignature + "\n" + temps + "\n" + timeUpdaterRunners + "\n}"
   }
 
   def generateAnimationState(understood: Understood): String = {
